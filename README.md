@@ -1,216 +1,102 @@
-# AI-trade-LSG
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>AI Trading Analyzer</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
+import pandas as pd
+import numpy as np
+import ta
+import cv2
+import pytesseract
+from binance.client import Client
 
-<!-- NAVBAR -->
-<nav class="navbar">
-  <h1>AI Trading Analyzer</h1>
-  <ul>
-    <li>Home</li>
-    <li>Markets</li>
-    <li>AI Insights</li>
-    <li>Upload</li>
-  </ul>
-</nav>
+class DataEngine:
+    def __init__(self, api_key=None, api_secret=None):
+        self.client = Client(api_key, api_secret)
 
-<!-- HERO -->
-<section class="hero">
-  <h2>Smarter Trading with AI Precision</h2>
-  <p>Upload charts. Detect trends. Optimize stop loss & take profit.</p>
-</section>
+    def get_crypto_data(self, symbol="BTCUSDT", interval="1h", limit=500):
+        klines = self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
+        df = pd.DataFrame(klines, columns=[
+            'time','open','high','low','close','volume',
+            '_','_','_','_','_','_'
+        ])
+        df['close'] = df['close'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        return dfclass MarketStructure:
+    def __init__(self, df):
+        self.df = df
 
-<!-- IMAGE SHOWCASE -->
-<section class="gallery">
-  <img src="https://images.unsplash.com/photo-1640161704729-cbe966a08476" alt="AI">
-  <img src="https://images.unsplash.com/photo-1642543492481-44e81e3914a7" alt="Analyst">
-  <img src="https://images.unsplash.com/photo-1621761191319-c6fb62004040" alt="Crypto">
-  <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3" alt="Stocks">
-</section>
+    def add_indicators(self):
+        self.df['EMA50'] = ta.trend.ema_indicator(self.df['close'], window=50)
+        self.df['EMA200'] = ta.trend.ema_indicator(self.df['close'], window=200)
+        self.df['RSI'] = ta.momentum.rsi(self.df['close'], window=14)
+        self.df['ATR'] = ta.volatility.average_true_range(
+            self.df['high'], self.df['low'], self.df['close'], window=14)
 
-<!-- AI INFO -->
-<section class="info">
-  <h3>How Our AI Works</h3>
-  <p>
-    Our AI analyzes chart screenshots using pattern recognition,
-    trend detection, and volatility modeling. It is optimized for
-    scalping, day trading, and small account growth strategies.
-  </p>
-</section>
+    def trend_direction(self):
+        if self.df['EMA50'].iloc[-1] > self.df['EMA200'].iloc[-1]:
+            return "Bullish"
+        elif self.df['EMA50'].iloc[-1] < self.df['EMA200'].iloc[-1]:
+            return "Bearish"
+        else:
+            return "Sideways"
+            class StrategyEngine:
+    def __init__(self, df):
+        self.df = df
 
-<!-- UPLOAD PANEL -->
-<section class="upload-panel">
-  <h3>Upload Chart Screenshot</h3>
-  <input type="file" id="imageUpload" accept="image/*">
-  <img id="preview" />
-  <button onclick="analyzeChart()">Analyze Chart</button>
-</section>
+    def generate_signal(self):
+        last = self.df.iloc[-1]
 
-<!-- ANALYSIS PANEL -->
-<section class="analysis-panel">
-  <h3>AI Trade Analysis</h3>
-  <div class="cards">
-    <div class="card">
-      <h4>Trend</h4>
-      <p id="trend">Waiting...</p>
-    </div>
-    <div class="card">
-      <h4>Stop Loss</h4>
-      <p id="stopLoss">Waiting...</p>
-    </div>
-    <div class="card">
-      <h4>Take Profit</h4>
-      <p id="takeProfit">Waiting...</p>
-    </div>
-    <div class="card">
-      <h4>Signal</h4>
-      <p id="signal">Waiting...</p>
-    </div>
-  </div>
-</section>
+        if (
+            last['EMA50'] > last['EMA200'] and
+            last['RSI'] > 50
+        ):
+            return "BUY"
 
-<!-- MARKETS -->
-<section class="markets">
-  <h3>Popular Markets</h3>
-  <div class="market-grid">
-    <div>📈 NASDAQ</div>
-    <div>₿ Bitcoin</div>
-    <div>💱 EUR/USD</div>
-    <div>🪙 Ethereum</div>
-    <div>📊 S&P 500</div>
-    <div>💹 Gold</div>
-  </div>
-</section>
+        elif (
+            last['EMA50'] < last['EMA200'] and
+            last['RSI'] < 50
+        ):
+            return "SELL"
 
-<footer>
-  <p>© 2026 AI Trading Analyzer — Smart Tools for Smart Traders</p>
-</footer>
+        else:
+            return "WAIT"
+            class RiskEngine:
+    def __init__(self, df, account_size=100, risk_percent=0.01):
+        self.df = df
+        self.account_size = account_size
+        self.risk_percent = risk_percent
 
-<script src="script.js"></script>
-</body>
-</html>
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #000;
-  color: #fff;
-}
+    def calculate_levels(self, signal):
+        last = self.df.iloc[-1]
+        atr = last['ATR']
+        entry = last['close']
 
-/* Navbar */
-.navbar {
-  display: flex;
-  justify-content: space-between;
-  padding: 15px 30px;
-  background: #0a0a0a;
-}
+        if signal == "BUY":
+            stop_loss = entry - (atr * 1.5)
+            take_profit = entry + (atr * 3)
+        elif signal == "SELL":
+            stop_loss = entry + (atr * 1.5)
+            take_profit = entry - (atr * 3)
+        else:
+            return None
 
-.navbar ul {
-  display: flex;
-  gap: 20px;
-  list-style: none;
-}
+        risk_amount = self.account_size * self.risk_percent
+        position_size = risk_amount / abs(entry - stop_loss)
 
-/* Hero */
-.hero {
-  text-align: center;
-  padding: 50px 20px;
-  background: linear-gradient(to right, #000, #111);
-}
+        return {
+            "Entry": entry,
+            "StopLoss": stop_loss,
+            "TakeProfit": take_profit,
+            "PositionSize": position_size
+        }
+        class ImageAnalyzer:
+    def __init__(self):
+        pass
 
-/* Gallery */
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  padding: 20px;
-  gap: 10px;
-}
+    def analyze_chart(self, image_path):
+        img = cv2.imread(image_path)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-.gallery img {
-  width: 100%;
-  border-radius: 10px;
-}
+        # Basic edge detection
+        edges = cv2.Canny(gray, 50, 150)
 
-/* Info */
-.info {
-  padding: 30px;
-  text-align: center;
-  background: #0a0a0a;
-}
-
-/* Upload */
-.upload-panel {
-  text-align: center;
-  padding: 30px;
-}
-
-#preview {
-  display: block;
-  margin: 20px auto;
-  max-width: 400px;
-  border-radius: 10px;
-}
-
-/* Analysis */
-.analysis-panel {
-  padding: 30px;
-}
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 20px;
-}
-
-.card {
-  background: #0a0a0a;
-  padding: 20px;
-  border-radius: 10px;
-  text-align: center;
-}
-
-/* Markets */
-.markets {
-  padding: 30px;
-  text-align: center;
-}
-
-.market-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
-}
-
-/* Footer */
-footer {
-  text-align: center;
-  padding: 20px;
-  background: #0a0a0a;
-}
-const upload = document.getElementById("imageUpload");
-const preview = document.getElementById("preview");
-
-upload.addEventListener("change", function () {
-  const file = this.files[0];
-  if (file) {
-    preview.src = URL.createObjectURL(file);
-  }
-});
-
-function analyzeChart() {
-  // Demo AI logic (replace with real AI later)
-  const trends = ["Uptrend", "Downtrend", "Sideways"];
-  const signals = ["BUY", "SELL", "WAIT"];
-
-  const trend = trends[Math.floor(Math.random() * trends.length)];
-  const signal = signals[Math.floor(Math.random() * signals.length)];
-
-  document.getElementById("trend").textContent = trend;
-  document.getElementById("stopLoss").textContent = "Auto-calculated";
-  document.getElementById("takeProfit").textContent = "Auto-calculated";
-  document.getElementById("signal").textContent = signal;
-}
+        return {
+            "Message": "Chart processed. Structure detection model needed for advanced mapping."
+        }
